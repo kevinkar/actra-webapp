@@ -18,7 +18,7 @@ or
 
 Screenshot showing what to expect.
 
-![ACTRA demo](.\\demo\\img\\ACTRA-demo.png)
+![ACTRA demo](./demo/img/ACTRA-demo.png)
 
 
 ### Versions
