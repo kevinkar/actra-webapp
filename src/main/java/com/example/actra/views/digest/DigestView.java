@@ -1,8 +1,9 @@
 package com.example.actra.views.digest;
 
-import com.example.actra.csv.CsvDigester;
 import com.example.actra.csv.Transaction;
+import com.example.actra.service.CsvService;
 import com.vaadin.flow.component.Composite;
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.grid.ColumnTextAlign;
 import com.vaadin.flow.component.grid.Grid;
@@ -11,16 +12,15 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.upload.Upload;
 import com.vaadin.flow.component.upload.receivers.MemoryBuffer;
-import com.vaadin.flow.data.provider.ListDataProvider;
+import com.vaadin.flow.data.provider.DataProvider;
 import com.vaadin.flow.data.renderer.LocalDateRenderer;
+import com.vaadin.flow.function.SerializablePredicate;
 import com.vaadin.flow.router.Menu;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import org.vaadin.lineawesome.LineAwesomeIconUrl;
 
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
 
 @PageTitle("Digest")
 @Route("digest")
@@ -37,8 +37,20 @@ public class DigestView extends Composite<VerticalLayout> {
     private static final String STATUS = "Status";
     private static final String UL_STARTED = "Upload started";
     private static final String UL_SUCCESS = "Upload succeeded";
+    private static final String UL_FAILED = "Upload failed";
+    private static final String PROCESSING_FAILED = "Failed to process file. Cause: %1$s";
+    private static final String PROCESSING_SUCCESS = "Loaded %1$d transactions.";
+    private static final String UNKNOWN_ERROR = "Unknown error";
 
-    public DigestView() {
+    private final CsvService service;
+    private Grid<Transaction> grid;
+    private TextArea statusTA;
+
+    /**
+     * @param csvService Provided by the Spring framework
+     */
+    public DigestView(CsvService csvService) {
+        this.service = csvService;
         getContent().setSizeFull();
         getContent().getStyle().set("flex-grow", "1");
         addContents();
@@ -47,6 +59,7 @@ public class DigestView extends Composite<VerticalLayout> {
     private void addContents() {
 
         TextArea statusTA = new TextArea(STATUS);
+        this.statusTA = statusTA;
         statusTA.setWidthFull();
         statusTA.setReadOnly(true);
 
@@ -56,28 +69,35 @@ public class DigestView extends Composite<VerticalLayout> {
         MemoryBuffer buffer = new MemoryBuffer();
         Upload upload = new Upload(buffer);
 
-        List<Transaction> transactions = new ArrayList<>();
-        ListDataProvider<Transaction> dataProvider = new ListDataProvider<>(transactions);
-        Grid<Transaction> grid = createGrid(dataProvider);
+        Grid<Transaction> grid = createGrid(service.getDataProvider());
+        this.grid = grid;
 
         upload.addStartedListener(event -> {
+            service.clear();
             statusTA.setValue(UL_STARTED);
-            transactions.clear();
-            dataProvider.refreshAll();
         });
 
+        upload.addFileRemovedListener(event -> {
+            statusTA.setValue("");
+        });
+
+        upload.addFailedListener(event -> {
+            statusTA.setValue(UL_FAILED);
+        });
+
+        UI ui = UI.getCurrent();
         upload.addSucceededListener(event -> {
             statusTA.setValue(UL_SUCCESS);
             InputStream inputStream = buffer.getInputStream();
 //            String fileName = event.getFileName();
 //            long contentLength = event.getContentLength();
 //            String mimeType = event.getMIMEType();
-            CsvDigester.digest(inputStream, transactions::add);
-            // Refresh grid data when all are loaded
-            dataProvider.refreshAll();
-            grid.recalculateColumnWidths();
-        });
+            service.clear();
+            service.process(inputStream,
+                    ui.accessLater(this::refreshGrid, null),
+                    ui.accessLater(this::fileFailed, null));
 
+        });
 
         VerticalLayout upVLayout = new VerticalLayout(upload);
         VerticalLayout downVLayout = new VerticalLayout(downloadButton);
@@ -93,10 +113,22 @@ public class DigestView extends Composite<VerticalLayout> {
         mainLayout.setSizeFull();
         getContent().add(mainLayout);
 
-
     }
 
-    private Grid<Transaction> createGrid(ListDataProvider<Transaction> dp) {
+    private void refreshGrid(int count) {
+        statusTA.setValue(String.format(PROCESSING_SUCCESS, count));
+        service.refresh();
+        grid.recalculateColumnWidths();
+    }
+
+    private void fileFailed(Throwable e) {
+        String msg = e != null ? e.getMessage() : UNKNOWN_ERROR;
+        statusTA.setValue(String.format(PROCESSING_FAILED, msg != null ? msg : UNKNOWN_ERROR));
+        service.refresh();
+        grid.recalculateColumnWidths();
+    }
+
+    private Grid<Transaction> createGrid(DataProvider<Transaction, SerializablePredicate<Transaction>> dp) {
 
         Grid<Transaction> grid = new Grid<>(Transaction.class, false);
         grid.setDataProvider(dp);
