@@ -24,6 +24,8 @@ import java.util.List;
 @AnonymousAllowed
 public class MainLayout extends AppLayout {
 
+    private static final String NAME = "ACTRA";
+
     private H1 viewTitle;
 
     public MainLayout() {
@@ -43,7 +45,7 @@ public class MainLayout extends AppLayout {
     }
 
     private void addDrawerContent() {
-        Span appName = new Span("actra");
+        Span appName = new Span(NAME);
         appName.addClassNames(LumoUtility.FontWeight.SEMIBOLD, LumoUtility.FontSize.LARGE);
         Header header = new Header(appName);
 
